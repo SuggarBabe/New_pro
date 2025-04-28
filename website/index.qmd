@@ -1,0 +1,1080 @@
+---
+title: Overview of Tourism Trend and Corresponding Factors
+format:
+  html:
+    self-contained: true
+    embed-resources: true
+code-fold: true
+---
+
+**Author: Xiangzhi Chen, Zenan Wang, Zihao Huang, Jiachen Gao**
+
+**From: Georgetown University**
+
+# Introduction
+
+Tourism has long been a powerful force in shaping the world—connecting people across continents, fostering cultural understanding, and driving economic growth. In recent decades, global tourism has evolved into a major pillar of the world economy, influencing everything from employment rates to infrastructure development. However, tourism is more than just a leisure activity; it is deeply intertwined with socioeconomic factors such as GDP growth and workforce dynamics. Understanding these complex relationships is crucial.
+
+This project, developed at Georgetown University, aims to guide audiences through an analytical journey of global tourism trends. We hope to explore how tourism patterns have changed over time and across regions. By investigating the correlations between tourism and key socioeconomic indicators—such as national GDP and employment—we seek to uncover the hidden drivers behind the movement of people across the globe. Our visualizations aim to not only inform but also inspire a deeper appreciation for the intricate forces shaping the world of travel today.
+
+# The Data We Use
+
+To conduct our analysis, we primarily draw from two rich data sources. The first is a dataset from the United Nations World Tourism Organization (UNWTO), which provides comprehensive information on international tourist arrivals across different countries and regions over time. This dataset serves as the foundation for identifying overarching tourism trends and regional disparities. 
+
+[dataset 1](https://www.unwto.org/tourism-statistics/tourism-statistics-database)
+
+In addition, we supplemented our analysis with socioeconomic data sourced from the World Bank database. By carefully selecting indicators such as GDP per capita and employment rates, we built a multidimensional view of the factors influencing tourism. This blended approach allows us to not only track tourism flows but also investigate the economic conditions that might be driving tourist movements globally.
+
+[dataset 2](https://data.worldbank.org/)
+
+# Global Tourism Trend
+
+Given the vast number of countries and the richness of global tourism patterns, it was important for us to first step back and look at the world as a whole. We created an interactive global map with a dropdown button for inbound tourism and domestic tourism, covering data from 2010 to 2022. This plot aims to guide our country's selection for deeper analysis. Each bubble on the map represents a country, with the size of the bubble proportional to the total number of arrivals. Countries with stronger tourism activity naturally stand out with larger, more vibrant bubbles.
+
+From these visualizations, several countries clearly emerged as leaders:
+
+- United States and China: Strong both in domestic and inbound tourism.
+
+- United Kingdom: Massive domestic tourism and notable international activity.
+
+- France and Spain: Consistently high inbound tourist numbers, highlighting their global appeal.
+
+- India: Surprisingly large domestic tourism.
+
+Since it would be impractical to analyze every nation individually, we strategically focused on these countries, which represent a variety of tourism dynamics: mature tourism markets, emerging tourism powers, and countries with interesting contrasts between domestic and international travel patterns.
+
+```{python}
+#| fig-cap: "Figure 1: Global Map"
+#| message: false
+#| warning: false
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import matplotlib.style as style
+import plotly.express as px
+
+import pycountry
+import plotly.graph_objects as go
+
+# Load data
+arrival = pd.read_csv("../data/Processed_data/arrival.csv")
+domestic = pd.read_csv("../data/Processed_data/domestic.csv")
+
+# Filter data by year (2010 - 2022)
+arrival_2010_2022 = arrival[(arrival['Years'] >= 2010) & (arrival['Years'] <= 2022)]
+domestic_2010_2022 = domestic[(domestic['Years'] >= 2010) & (domestic['Years'] <= 2022)]
+
+# Summarize total arrivals by country
+total_arrivals_by_country = arrival_2010_2022.groupby('Country', as_index=False)['Total arrivals (Thousands)'].sum().rename(columns={'Total arrivals (Thousands)': 'total_arrivals'})
+
+total_domestic_by_country = domestic_2010_2022.groupby('Country', as_index=False)['Total trips (Thousands)'].sum().rename(columns={'Total trips (Thousands)': 'total_arrivals'})
+
+# Ensure numeric and handle missing values
+total_arrivals_by_country['total_arrivals'] = pd.to_numeric(total_arrivals_by_country['total_arrivals'], errors='coerce').fillna(0)
+total_domestic_by_country['total_arrivals'] = pd.to_numeric(total_domestic_by_country['total_arrivals'], errors='coerce').fillna(0)
+
+# Filter top countries
+top_countries_arrival = total_arrivals_by_country.nlargest(30, 'total_arrivals')
+total_arrivals_by_country['country_group'] = total_arrivals_by_country['Country'].apply(
+    lambda x: x if x in top_countries_arrival['Country'].values else 'Other'
+)
+
+top_countries_domestic = total_domestic_by_country.nlargest(30, 'total_arrivals')
+total_domestic_by_country['country_group'] = total_domestic_by_country['Country'].apply(
+    lambda x: x if x in top_countries_domestic['Country'].values else 'Other'
+)
+
+# Add Type col
+total_arrivals_by_country['Type'] = 'Inbound'
+total_domestic_by_country['Type'] = 'Domestic'
+
+# Combine both datasets
+combined_df = pd.concat([
+    total_arrivals_by_country[['country_group', 'total_arrivals', 'Type']],
+    total_domestic_by_country[['country_group', 'total_arrivals', 'Type']]
+])
+
+# Group by Type and country_group to sum values
+combined_df = combined_df.groupby(['Type', 'country_group'], as_index=False)['total_arrivals'].sum()
+
+# Rename specific country names
+combined_df['country_group'] = combined_df['country_group'].replace({
+    'UNITED STATES OF AMERICA': 'US'
+})
+
+# Get ISO alpha-3 codes
+def get_iso3(country_name):
+    try:
+        return pycountry.countries.lookup(country_name).alpha_3
+    except:
+        return None
+
+# Add ISO code
+combined_df['iso_alpha'] = combined_df['country_group'].apply(get_iso3)
+plot_df = combined_df.dropna(subset=['iso_alpha'])
+
+# Ensure numeric
+plot_df['total_arrivals'] = pd.to_numeric(plot_df['total_arrivals'], errors='coerce').fillna(0)
+
+fig = go.Figure()
+
+types = plot_df['Type'].unique()
+
+# Normalize size and enforce minimum bubble size
+min_size = 10
+max_size = 50
+
+for i, t in enumerate(types):
+    df_t = plot_df[plot_df['Type'] == t]
+    
+    max_val = df_t['total_arrivals'].max()
+    normalized_size = df_t['total_arrivals'] / max_val * max_size
+    size_with_min = normalized_size.clip(lower=min_size)  # Ensure minimum size since unequally distributed lol
+
+    fig.add_trace(go.Scattergeo(
+        locations=df_t['iso_alpha'],
+        locationmode='ISO-3',
+        text=df_t['country_group'],
+        hovertext=df_t['country_group'] + "<br>" + df_t['total_arrivals'].round(1).astype(str) + "K",
+        marker=dict(size=size_with_min, color=df_t['total_arrivals'],
+            colorscale='Viridis', colorbar_title='Arrivals'
+        ),
+        name=t,
+        visible=(i == 0)
+    ))
+
+# Dropdown selection
+fig.update_layout(
+    updatemenus=[dict(
+        buttons=[dict(label=t, method='update', 
+        args=[{'visible': [t == ty for ty in types]}, 
+        {'title': f'Total Arrivals by Countries from 2010 to 2022 ({t})'}]) for t in types],
+        direction='down', x=0.5, xanchor='center', y=1.1, yanchor='top')],
+    geo=dict(projection_type="natural earth"),
+    title='Total Arrivals by Countries from 2010 to 2022 (Inbound)',
+    margin=dict(t=100, l=0, r=0, b=0)
+)
+
+fig.show()
+```
+
+While global arrival numbers give us a big-picture view, understanding where tourists are coming from offers even deeper insights. To explore this, we created an interactive Sankey diagram that visualizes the flow of tourists from broader regions to specific countries. Each flow in the Sankey plot represents the volume of tourists traveling from a given region to the major countries with large arrivals. By adjusting the year, users can observe how these flows have evolved from 2010 to 2022.
+
+Several global patterns clearly emerge:
+
+- Tourists often stay within their own continent:
+
+Travelers in Europe frequently visit other European countries such as France, Spain, and the UK. And in East Asia and the Pacific, regional travel is strong, with many tourists choosing China, Japan, Thailand, and Malaysia as destinations.
+
+- Regional Leaders:
+
+The United States stands out not only as a domestic tourism giant but also as a major destination for travelers from East Asia, the Pacific, Europe, and the Americas.
+
+Through this visualization, we observe that geographic proximity, economic ties, and cultural familiarity heavily influence international travel choices. The Sankey plot not only helps highlight major tourism hubs but also uncovers how interconnected different regions are in the global tourism network.
+
+```{python}
+#| fig-cap: "Figure 2: Sankey Diagram"
+#| message: false
+#| warning: false
+regions = pd.read_csv("../data/Processed_data/regions.csv")
+regions.rename(columns=lambda x: x.replace(' (Thousands)', ''), inplace=True)
+
+# Set of countries and regions
+countries_of_interest = [
+    'CHINA', 'UNITED STATES OF AMERICA', 'FRANCE', 'UNITED KINGDOM',
+    'SPAIN', 'INDIA', 'MEXICO', 'ITALY', 'POLAND', 'JAPAN', 'THAILAND', 'MALAYSIA', 'CANADA', 'SOUTH AFRICA'
+]
+
+region_columns = [
+    'Africa', 'Americas', 'East Asia and the Pacific',
+    'Europe', 'Middle East', 'Other not classified', 'South Asia'
+]
+
+# Filter for relevant countries
+regions = regions[regions['Country'].isin(countries_of_interest)]
+years = sorted(regions['Years'].unique())
+
+# Prepare static node list
+nodes = region_columns + countries_of_interest
+node_map = {node: i for i, node in enumerate(nodes)}
+
+# Build one Sankey trace per year
+data_traces = []
+dropdown_buttons = []
+
+for i, year in enumerate(years):
+    df_year = regions[regions['Years'] == year]
+    df_agg = df_year.groupby('Country')[region_columns].sum().reset_index()
+    df_long = df_agg.melt(id_vars='Country', var_name='Region', value_name='Value')
+    df_long = df_long[df_long['Value'].notna() & (df_long['Value'] > 0)]
+    df_long['Value'] *= 1000  # Convert from 'Thousands' to actual numbers
+
+    trace = go.Sankey(
+        visible=(i == 0),
+        node=dict(
+            pad=15,
+            thickness=20,
+            line=dict(color='black', width=0.5),
+            label=nodes
+        ),
+        link=dict(
+            source=df_long['Region'].map(node_map),
+            target=df_long['Country'].map(node_map),
+            value=df_long['Value'],
+            hovertemplate='From %{source.label} to %{target.label}<br>Value: %{value:,}',
+            color='rgba(169, 169, 169, 0.5)'
+        )
+    )
+    data_traces.append(trace)
+
+    dropdown_buttons.append(dict(
+        label=str(year),
+        method='update',
+        args=[
+            {'visible': [j == i for j in range(len(years))]},
+            {'title': f'Migration Flow from Regions to Countries in {year}'}
+        ]
+    ))
+
+# Create the figure
+fig = go.Figure(data=data_traces)
+fig.update_layout(
+    title=f'Migration Flow from Regions to Countries in {years[0]}',
+    width=740,
+    height=500,
+    plot_bgcolor='rgba(0,0,0,0)',
+    paper_bgcolor='rgba(0,0,0,0)',
+    updatemenus=[dict(
+        active=0,
+        buttons=dropdown_buttons,
+        x=1.1,
+        y=1,
+        xanchor='right',
+        yanchor='top'
+    )]
+)
+
+fig.show()
+```
+
+To closely examine how inbound and domestic tourism evolved over time, we created stacked plots with 4-year rolling averages for six major countries.
+This approach highlights not only the overall growth trends but also the disruptions caused by global events like the COVID-19 pandemic.
+
+When comparing across all six countries, clear patterns emerge regarding tourism structure and resilience:
+
+China, India, the United States, the United Kingdom, France, and Spain all show that domestic tourism is the dominant force in their tourism industries.
+In each case, domestic trips are consistently larger than inbound arrivals across the entire period from 2010 to 2022.
+
+China, India, and the United States display extremely large domestic sectors, where inbound tourism contributes only a very small share. The United Kingdom experienced a particularly strong domestic tourism surge post-2014, culminating in record highs by 2022.
+
+France and Spain, while traditionally seen as major inbound destinations, also have stronger domestic markets than inbound. Domestic trips in both countries consistently outnumber inbound arrivals, although inbound tourism still plays an important complementary role.
+
+Pandemic impacts were seen across all countries, but those with stronger domestic bases — like the United Kingdom, India, and China — exhibited faster and stronger recovery trajectories.
+
+Across all countries, a robust domestic tourism sector proved critical for resilience during global disruptions, highlighting its importance not just for economic recovery but for the long-term sustainability of the tourism industry.
+
+```{python}
+#| message: false
+#| warning: false
+
+import pandas as pd
+import matplotlib.pyplot as plt
+
+# Load the data
+arrival = pd.read_csv("../data/Processed_data/arrival.csv")
+domestic = pd.read_csv("../data/Processed_data/domestic.csv")
+
+# Filter for the years 2010 to 2022
+arrival_filtered = arrival[(arrival['Years'] >= 2010) & (arrival['Years'] <= 2022)]
+domestic_filtered = domestic[(domestic['Years'] >= 2010) & (domestic['Years'] <= 2022)]
+
+# Filter data for interested countries
+countries_of_interest = ['CHINA', 'UNITED STATES OF AMERICA', 'FRANCE', 'UNITED KINGDOM', 'SPAIN', 'INDIA']
+arrival_filtered = arrival_filtered[arrival_filtered['Country'].isin(countries_of_interest)]
+domestic_filtered = domestic_filtered[domestic_filtered['Country'].isin(countries_of_interest)]
+
+# Calculate 4-year rolling average for arrivals
+arrival_filtered['Total_Arrival_Rolling_Avg'] = arrival_filtered.groupby('Country')['Total arrivals (Thousands)']\
+    .rolling(window=4, min_periods=1).mean().reset_index(level=0, drop=True)
+
+# Calculate 4-year rolling average for domestic arrivals
+domestic_filtered['Total_Trips_Rolling_Avg'] = domestic_filtered.groupby('Country')['Total trips (Thousands)']\
+    .rolling(window=4, min_periods=1).mean().reset_index(level=0, drop=True)
+
+# Merge both arrival and domestic data
+merged_data = pd.merge(
+    arrival_filtered[['Country', 'Years', 'Total arrivals (Thousands)', 'Total_Arrival_Rolling_Avg']],
+    domestic_filtered[['Country', 'Years', 'Total trips (Thousands)', 'Total_Trips_Rolling_Avg']],
+    on=['Country', 'Years'], how='inner'
+)
+
+# Create a 2x3 grid of subplots
+fig, axes = plt.subplots(2, 3, figsize=(10, 5))  # Smaller overall size
+axes = axes.flatten()
+
+for idx, country in enumerate(countries_of_interest):
+    ax = axes[idx]
+    country_data = merged_data[merged_data['Country'] == country]
+
+    if country_data.empty:
+        print(f"No data available for {country}. Skipping plot.")
+        continue
+
+    # Stacked bar plots
+    ax.bar(country_data['Years'], country_data['Total arrivals (Thousands)'], label='Inbound Arrivals', color='#FF91A4', width=0.5)
+    ax.bar(country_data['Years'], country_data['Total trips (Thousands)'], bottom=country_data['Total arrivals (Thousands)'], label='Domestic Trips', color='lightblue', width=0.5)
+
+    # Lines of rolling averages
+    ax.plot(country_data['Years'], country_data['Total_Arrival_Rolling_Avg'], label='Inbound Rolling Avg', linestyle='--', marker='x', color='#C40234', linewidth=2.5)
+    ax.plot(country_data['Years'], country_data['Total_Trips_Rolling_Avg'], label='Domestic Rolling Avg', linestyle='-', marker='o', color='blue', linewidth=2.5)
+
+    ax.set_title(f'{country}', fontsize=13)
+    ax.set_xlabel('Year', fontsize=11)
+    ax.set_ylabel('Tourists (Thousands)', fontsize=11)
+    ax.set_xticks(country_data['Years'])
+    ax.tick_params(axis='x', rotation=45)
+
+# Handle the legends: Move to bottom center
+handles, labels = axes[0].get_legend_handles_labels()
+fig.legend(handles, labels, loc='lower center', ncol=4, fontsize=10, bbox_to_anchor=(0.5, -0.05))
+
+# Adjust layout
+plt.tight_layout(rect=[0, 0.05, 1, 0.95])  # Leave space for the title and legend
+fig.suptitle('Inbound and Domestic Tourist Trends (2010–2022)', fontsize=18, y=0.98)
+plt.show()
+```
+
+# What Guides Tourism
+
+## GDP on Tourism: Not Really
+
+To further explore the relationship between countries' economic strength and their tourism performance, we animated a bubble plot showing Tourism Expenditure vs GDP from 2000 to 2022.
+
+Each bubble represents a country, with:
+
+- X-axis: Total tourism expenditure (in USD)
+
+- Y-axis: GDP (in USD)
+
+- Bubble size: Number of arrivals
+
+As the animation plays across the years, a few key insights become clear:
+
+- Economic factors like GDP does not appear to be a direct driver of tourism:
+
+Countries like France, Spain, and the United Kingdom consistently have high tourism expenditures despite their moderate GDP compared to giants like the United States and China.
+
+- The United States stands out:
+
+It is an exception where both GDP and tourism expenditure are extremely high, suggesting that for some destinations, economic size does help boost tourism spending.
+
+- China's Position:
+
+Although China's GDP grows rapidly during this period, its tourism expenditure remains relatively more modest.
+
+- Spain and France punch above their weight:
+
+Despite having GDPs much smaller than China or the U.S., these countries attract huge tourism spending, reinforcing the idea that cultural and historical appeal outweighs pure economic power.
+
+Overall, "Tourists Chase Experiences, Not Really Economies". GDP size doesn’t guarantee tourism success.
+
+```{python}
+#| fig-cap: "Figure 4: Bubble Plot"
+#| message: false
+#| warning: false
+
+# Load the data
+arrival = pd.read_csv("../data/Processed_data/arrival.csv")
+expenditure = pd.read_csv("../data/Processed_data/expenditure.csv")
+
+# Select time range
+arrival_2010_2022 = arrival[(arrival['Years'] >= 2000) & (arrival['Years'] <= 2022)]
+expenditure_2010_2022 = expenditure[(expenditure['Years'] >= 2000) & (expenditure['Years'] <= 2022)]
+
+# Interested countries to select
+countries = ['CHINA', 'UNITED STATES OF AMERICA', 'FRANCE', 'UNITED KINGDOM', 'SPAIN', 'INDIA']
+# Filter by interested countries
+arrival_selected = arrival_2010_2022[arrival_2010_2022['Country'].isin(countries)]
+expenditure_selected = expenditure_2010_2022[expenditure_2010_2022['Country'].isin(countries)]
+
+# Rename columns
+arrival_selected = arrival_selected.rename(columns={'Total arrivals (Thousands)': 'Total_arrival'})
+expenditure_selected = expenditure_selected.rename(columns={
+    'Tourism expenditure in the country (US$ Millions)': 'Total_expend',
+    'Passenger transport (US$ Millions)': 'Passenger_expend',
+    'Travel (US$ Millions)': 'Travel_expend'
+})
+
+# Ensure numeric and handle missing values (for both datasets)
+arrival_selected['Total_arrival'] = pd.to_numeric(arrival_selected['Total_arrival'], errors='coerce')
+arrival_selected['Total_arrival'].fillna(0, inplace=True)
+
+expenditure_selected['Total_expend'] = pd.to_numeric(expenditure_selected['Total_expend'], errors='coerce')
+expenditure_selected['Total_expend'].fillna(0, inplace=True)
+
+expenditure_selected['Passenger_expend'] = pd.to_numeric(expenditure_selected['Passenger_expend'], errors='coerce')
+expenditure_selected['Passenger_expend'].fillna(0, inplace=True)
+
+# Merge the two datasets on 'Country' and 'Years'
+merged_data = pd.merge(expenditure_selected, arrival_selected, on=['Country', 'Years'])
+
+# Select needed columns, change type, and drop NA
+merged_data = merged_data[['Country', 'Years', 'Total_expend', 'Total_arrival']]
+merged_data['Years'] = pd.to_numeric(merged_data['Years'], errors='coerce')
+merged_data['Total_expend'] = pd.to_numeric(merged_data['Total_expend'], errors='coerce')
+merged_data['Total_arrival'] = pd.to_numeric(merged_data['Total_arrival'], errors='coerce')
+merged_data.dropna(inplace=True)
+
+# Drop rows where 'Total_arrival' is 0
+merged_data = merged_data[merged_data['Total_arrival'] != 0]
+
+merged_data['Total_arrival'] = merged_data['Total_arrival'] * 1000
+merged_data['Total_expend'] = merged_data['Total_expend'] * 1000000
+
+# Read world bank data for GDP
+All_Countries_Worldbank = pd.read_csv("../data/Processed_data/All_Countries_Worldbank.csv")
+All_Countries_Worldbank = All_Countries_Worldbank[['Country', 'Years', 'GDP (current US$)']]
+# Replace 'UNITED STATES' with 'UNITED STATES OF AMERICA' in the 'Country' column
+All_Countries_Worldbank['Country'] = All_Countries_Worldbank['Country'].replace('UNITED STATES', 'UNITED STATES OF AMERICA')
+
+# Merge the two datasets on 'Country' and 'Years'
+merged_data = pd.merge(merged_data, All_Countries_Worldbank, on=['Country', 'Years'], how='left')
+
+# Lock axis
+max_x = merged_data['Total_expend'].max()
+max_y = merged_data['GDP (current US$)'].max()
+
+# Animated plot
+fig = px.scatter(
+    merged_data,
+    x='Total_expend',
+    y='GDP (current US$)',
+    size='Total_arrival',
+    color='Country',
+    animation_frame='Years',
+    hover_name='Country',
+    size_max=60,
+    labels={
+        'Total_expend': 'Tourism Expenditure (US$)',
+        'GDP (current US$)': 'GDP (US$)',
+        'Total_arrival': 'Number of Arrivals'
+    },
+    title='Tourism Expenditure vs GDP (2000–2022)',
+)
+
+# Fixed axes values
+fig.update_layout(
+    geo=dict(showframe=False),
+    margin=dict(t=60, l=0, r=0, b=0),
+    xaxis=dict(
+        title='Tourism Expenditure (US$)',
+        range=[0, max_x],
+    ),
+    yaxis=dict(
+        title='GDP (US$)',
+        range=[0, max_y]
+    )
+)
+
+fig.show()
+```
+
+## Other Factors Related To Tourism
+
+The code identifies the top 10 countries with the highest tourist arrivals and uses Ridge Regression to estimate important contributing factors. A Sankey diagram then visualizes how different factors link to each country. The results show that overnight stays are major drivers for countries like Spain, Italy, and the United Kingdom. Passenger transportation is especially important for the United States and Mexico, while other tourism industries contribute notably to countries like Hungary and Poland. Although many features were included in the regression, only a few stand out clearly—most others appear less meaningful or possibly noisy.
+```{python}
+#| fig-cap: "Figure 5: Sankey Plot Visualizing Factors Contributing To Tourism"
+#| message: false
+#| warning: false
+
+# Import libraries
+import pandas as pd
+import plotly.graph_objects as go
+import numpy as np
+from sklearn.linear_model import Ridge
+from sklearn.preprocessing import StandardScaler
+
+# Load uploaded datasets
+arrival_df = pd.read_csv('../data/Processed_data/arrival.csv')
+employment_df = pd.read_csv('../data/Processed_data/employment.csv')
+expenditure_df = pd.read_csv('../data/Processed_data/expenditure.csv')
+domestic_accommodation_df = pd.read_csv('../data/Processed_data/domestic_accommodation.csv')
+# Merge datasets
+merged_df = arrival_df.merge(
+    employment_df, on=['Country', 'Years'], how='outer'
+).merge(
+    expenditure_df, on=['Country', 'Years'], how='outer'
+).merge(
+    domestic_accommodation_df, on=['Country', 'Years'], how='outer'
+)
+
+# Clean column names
+merged_df.columns = merged_df.columns.str.replace(r'\s+\(.*?\)', '', regex=True).str.strip().str.replace(' ', '_')
+
+# Find top arrival countries 
+latest_year = arrival_df['Years'].max()
+arrival_latest = arrival_df[arrival_df['Years'] == latest_year]
+top_arrivals = arrival_latest[['Country', 'Total arrivals (Thousands)']].sort_values(
+    by='Total arrivals (Thousands)', ascending=False
+).reset_index(drop=True)
+top_countries = top_arrivals['Country'].head(10)  # Top 10 countries
+
+# Prepare feature dataset
+feature_cols = [
+    'Overnights_visitors', 'Same-day_visitors',
+    'Accommodation_services_for_visitors', 'Food_and_beverage_serving_activities',
+    'Other_accommodation_services', 'Other_tourism_industries',
+    'Passenger_transportation', 'Total',
+    'Travel_agencies_and_other_reservation_services_activities',
+    'Passenger_transport', 'Tourism_expenditure_in_the_country',
+    'Travel', 'Guests', 'Overnights', 'hotel_guests', 'hotel_overnights'
+]
+available_features = [col for col in feature_cols if col in merged_df.columns]
+
+# Filter for top countries and latest year
+feature_df = merged_df[(merged_df['Country'].isin(top_countries)) & (merged_df['Years'] == latest_year)]
+
+# Prepare X and y
+X = feature_df[available_features].fillna(0)
+y = feature_df['Total_arrivals']
+
+# Standardize features
+scaler = StandardScaler()
+X_scaled = scaler.fit_transform(X)
+
+# Ridge Regression for feature importance
+ridge_model = Ridge(alpha=1.0)
+ridge_model.fit(X_scaled, y)
+
+ridge_importance = pd.Series(ridge_model.coef_, index=available_features).sort_values(key=np.abs, ascending=False)
+
+# Prepare chord-like (sankey) plot
+top_features = ridge_importance.abs().sort_values(ascending=False).head(8)
+
+# Labels = countries + features
+labels = list(top_countries) + list(top_features.index)
+n_countries = len(top_countries)
+n_features = len(top_features)
+
+# Create connection matrix
+matrix = np.zeros((n_countries + n_features, n_countries + n_features))
+
+for i, country in enumerate(top_countries):
+    for j, feature in enumerate(top_features.index):
+        value = feature_df.loc[feature_df['Country'] == country, feature]
+        if not value.empty and not pd.isna(value.values[0]):
+            matrix[i, n_countries + j] = abs(value.values[0])
+
+# Normalize matrix for better scaling
+if matrix.max() > 0:
+    matrix = matrix / matrix.max()
+
+# Build Sankey links
+link = dict(source=[], target=[], value=[], color=[])
+for i in range(n_countries):
+    for j in range(n_features):
+        if matrix[i, n_countries + j] > 0:
+            link['source'].append(i)
+            link['target'].append(n_countries + j)
+            link['value'].append(matrix[i, n_countries + j])
+            link['color'].append('rgba(150,150,250,0.5)')
+
+# Build nodes
+node = dict(
+    label=labels,
+    pad=15,
+    thickness=20,
+    line=dict(color="black", width=0.5)
+)
+
+# Plot the Sankey diagram
+fig = go.Figure(data=[go.Sankey(link=link, node=node)])
+fig.update_layout(title_text="Top Countries and Factors Contributing to Tourist Arrivals", font_size=10)
+fig.show()
+```          
+
+To allow a closer inspection, I also created a choropleth map highlighting these top countries. In this map, you can click on a country to view key tourism-related details such as Travel Agencies, Food and Beverage Services, and Other Accommodation Services, helping to better understand the tourism infrastructure behind the visitor numbers.
+
+```{python}
+#| fig-cap: "Figure 6: Interactive Choropleth Map Displaying Global Arrival"
+#| message: false
+#| warning: false
+
+import pandas as pd
+import plotly.graph_objects as go
+
+# Merge data using OUTER JOIN to keep all countries
+merged_df = pd.merge(employment_df, arrival_df, on=['Country', 'Years'], how='outer')
+
+# Clean column names
+merged_df.columns = merged_df.columns.str.replace(r'\s+\(.*?\)', '', regex=True).str.strip().str.replace(' ', '_')
+
+
+# List of countries to add stars
+highlight_countries = [
+    'Mexico', 'Hungary', 'Poland', 'Italy', 'Spain', 'Türkiye', 'Denmark', 'Croatia', 'United Kingdom', 'United States'
+]
+
+# Hardcoded lat/lon for these countries
+country_coords = {
+    'Mexico': (23.6345, -102.5528),
+    'Hungary': (47.1625, 19.5033),
+    'Poland': (51.9194, 19.1451),
+    'Italy': (41.8719, 12.5674),
+    'Spain': (40.4637, -3.7492),
+    'Türkiye': (38.9637, 35.2433),
+    'Denmark': (56.2639, 9.5018),
+    'Croatia': (45.1000, 15.2000),
+    'United Kingdom': (55.3781, -3.4360),
+    'United States': (37.0902, -95.7129)
+}
+
+# Build Dropdown Buttons
+years = sorted(merged_df['Years'].dropna().unique())
+data_traces = []
+buttons = []
+
+for i, year in enumerate(years):
+    df_year = merged_df[merged_df['Years'] == year].copy()
+
+    df_year['text'] = (
+    "Country: " + df_year['Country'].fillna('NA') +
+    "<br>Year: " + df_year['Years'].astype(str) +
+     "<br>Total Arrivals: " + df_year['Total_arrivals'].fillna('NA').astype(str) + "K" +
+        "<br>Overnight Visitors: " + df_year['Overnights_visitors'].fillna('NA').astype(str) + "K" +
+        "<br>Same-day Visitors: " + df_year['Same-day_visitors'].fillna('NA').astype(str) + "K" +
+    "<br>Food & Beverage Serving: " + df_year['Food_and_beverage_serving_activities'].fillna('NA').astype(str) + "K" +
+    "<br>Other Accommodation Services: " + df_year['Other_accommodation_services'].fillna('NA').astype(str) + "K" +
+    "<br>Other Tourism Industries: " + df_year['Other_tourism_industries'].fillna('NA').astype(str) + "K" +
+    "<br>Passenger Transportation: " + df_year['Passenger_transportation'].fillna('NA').astype(str) + "K" +
+    "<br>Travel Agencies & Reservation: " + df_year['Travel_agencies_and_other_reservation_services_activities'].fillna('NA').astype(str) + "K"
+)
+
+    # Choropleth for arrivals
+    choropleth = go.Choropleth(
+        locations=df_year['Country'],
+        locationmode="country names",
+        z=df_year['Total_arrivals'],
+        text=df_year['text'],
+        colorscale='YlGnBu',
+        colorbar_title="Arrivals (Thousands)",
+        hovertemplate="%{text}<extra></extra>",
+        zmin=0,
+        zmax=merged_df['Total_arrivals'].max(),
+        visible=(i == 0)
+    )
+
+    # Scattergeo for stars on highlighted countries (with hardcoded lat/lon)
+    lats = [country_coords[country][0] for country in highlight_countries]
+    lons = [country_coords[country][1] for country in highlight_countries]
+
+    stars = go.Scattergeo(
+        lat=lats,
+        lon=lons,
+        mode='markers',
+        marker=dict(
+            size=8,
+            symbol='star',
+            color='black'
+        ),
+        hoverinfo='skip',
+        visible=(i == 0)
+    )
+
+    # Append both traces for this year
+    data_traces.append(choropleth)
+    data_traces.append(stars)
+
+    # Visibility settings: two traces per year
+    visibility = [False] * (2 * len(years))
+    visibility[2*i] = True
+    visibility[2*i+1] = True
+
+    buttons.append(dict(
+        label=str(year),
+        method='update',
+        args=[{'visible': visibility},
+              {'title': f'Tourist Arrivals and Other Relevant Indexes in {year}'}]
+    ))
+
+# Layout
+layout = go.Layout(
+    title=f"Tourist Arrivals and Other Relevant Indexes in {years[0]}",
+    geo=dict(
+        showframe=False,
+        showcoastlines=True,
+        projection_type='natural earth'
+    ),
+    height=750,
+    margin=dict(l=50, r=50, t=70, b=40),
+    updatemenus=[dict(
+        active=0,
+        buttons=buttons,
+        direction="down",
+        x=0.01,
+        y=0.9,
+        showactive=True,
+        xanchor="left",
+        yanchor="top"
+    )]
+)
+
+# Assemble and Show
+fig = go.Figure(data=data_traces, layout=layout)
+fig.show()
+
+```
+
+Separately, another analysis was conducted to examine which features are most strongly correlated with total tourist arrivals. By merging datasets and calculating Pearson correlations, the code identifies the top factors influencing tourism success. The bar chart shows that overnight visitors, food and beverage services, and same-day visitors have the highest positive correlations with total arrivals, suggesting that a strong visitor experience and service offerings are closely tied to high tourism numbers. Travel and tourism expenditures also show meaningful relationships, while some factors like hotel overnights and cruise passengers have lower correlations than expected. Overall, the analysis highlights that enhancing the visitor experience beyond just lodging is crucial for attracting and sustaining tourism.
+
+```{python}
+#| fig-cap: "Figure 7: Top Features Related To Tourism"
+#| message: false
+#| warning: false
+
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+# Merge on Country and Years
+merged_df = (
+    arrival_df
+    .merge(employment_df, on=['Country', 'Years'], how='left')
+    .merge(domestic_accommodation_df, on=['Country', 'Years'], how='left')
+    .merge(expenditure_df, on=['Country', 'Years'], how='left')
+)
+
+# Filter to all years before 2020
+df_before_2020 = merged_df[merged_df['Years'] < 2020]
+
+# Drop rows without total arrival data
+df_before_2020 = df_before_2020.dropna(subset=['Total arrivals (Thousands)'])
+
+# Define features by their original names
+features = [
+    'Overnights visitors (tourists) (Thousands)',
+    'Same-day visitors (excursionists) (Thousands)',
+    'of which, cruise passengers (Thousands)',
+    'Accommodation services for visitors (hotels and similar establishments) (Thousands)',
+    'Food and beverage serving activities (Thousands)',
+    'Other accommodation services (Thousands)',
+    'Other tourism industries (Thousands)',
+    'Passenger transportation (Thousands)',
+    'Total (Thousands)',
+    'Travel agencies and other reservation services activities (Thousands)',
+    'Guests (Thousands)',
+    'Overnights (Thousands)',
+    'hotel_guests (Thousands)',
+    'hotel_overnights (Thousands)',
+    'Passenger transport (US$ Millions)',
+    'Tourism expenditure in the country (US$ Millions)',
+    'Travel (US$ Millions)'
+]
+
+# Shorter feature names
+feature_name_mapping = {
+    'Overnights visitors (tourists) (Thousands)': 'Overnight Visitors',
+    'Same-day visitors (excursionists) (Thousands)': 'Same-day Visitors',
+    'of which, cruise passengers (Thousands)': 'Cruise Passengers',
+    'Accommodation services for visitors (hotels and similar establishments) (Thousands)': 'Accommodation Services',
+    'Food and beverage serving activities (Thousands)': 'Food & Beverage Services',
+    'Other accommodation services (Thousands)': 'Other Accommodation',
+    'Other tourism industries (Thousands)': 'Other Tourism Industries',
+    'Passenger transportation (Thousands)': 'Passenger Transportation',
+    'Total (Thousands)': 'Total Employment',
+    'Travel agencies and other reservation services activities (Thousands)': 'Travel Agencies',
+    'Guests (Thousands)': 'Guests',
+    'Overnights (Thousands)': 'Overnights',
+    'hotel_guests (Thousands)': 'Hotel Guests',
+    'hotel_overnights (Thousands)': 'Hotel Overnights',
+    'Passenger transport (US$ Millions)': 'Passenger Transport Spending',
+    'Tourism expenditure in the country (US$ Millions)': 'Tourism Expenditure',
+    'Travel (US$ Millions)': 'Travel Spending'
+}
+
+# Compute Pearson correlation with Total arrivals
+corr_matrix = df_before_2020[features + ['Total arrivals (Thousands)']]
+corr_with_arrivals = corr_matrix.corr()['Total arrivals (Thousands)'].drop('Total arrivals (Thousands)')
+corr_sorted = corr_with_arrivals.abs().sort_values(ascending=False)
+
+# Prepare shorter labels for top features
+top_feats = corr_sorted.head(10).index
+short_labels = [feature_name_mapping[feat] for feat in top_feats]
+
+# Plot
+plt.figure(figsize=(7, 5))
+sns.barplot(x=corr_with_arrivals[top_feats], y=short_labels, palette='viridis')
+plt.xlabel('Correlation Coefficient\nwith Total Arrivals')
+plt.title('Top 10 Features Correlated with Tourist Arrivals (Before 2020)')
+plt.tight_layout()
+plt.show()
+```
+
+# Impact of Tourism
+
+## Tourism on GDP: Positive Effect
+
+To explore the relationships between economic scale and tourism activity, we created an interactive parallel coordinates plot linking GDP, tourism expenditure, tourist arrivals, and years from 2010 to 2022. Each line represents a country-year observation, and users can highlight individual countries to examine their trajectories in more detail. 
+
+China exhibits massive GDP growth across the period, but its tourism expenditure and arrivals grow only modestly, showing that tourism remains a relatively small part of its overall economy. 
+
+France maintains a balanced profile, with consistently strong tourism expenditure and arrivals relative to its GDP, underscoring the important role tourism plays in its economy. 
+
+India demonstrates steady growth across GDP, expenditure, and arrivals, reflecting an emerging but still modest tourism sector. 
+
+Spain stands out as highly dependent on tourism, with tourism expenditure and arrivals forming a large share relative to its GDP, making it particularly sensitive to external shocks like the COVID-19 pandemic. 
+
+The United Kingdom shows stable GDP and moderate tourism activity, with tourism playing a meaningful but not dominant role.
+
+```{python}
+#| fig-cap: "Figure 8: Parallel Coordinate Plot: Higher Tier"
+#| message: false
+#| warning: false
+
+pd.DataFrame.iteritems = pd.DataFrame.items
+
+# Load the data
+arrival = pd.read_csv("../data/Processed_data/arrival.csv")
+expenditure = pd.read_csv("../data/Processed_data/expenditure.csv")
+
+# Select time range
+arrival_2010_2022 = arrival[(arrival['Years'] >= 2010) & (arrival['Years'] <= 2022)]
+expenditure_2010_2022 = expenditure[(expenditure['Years'] >= 2010) & (expenditure['Years'] <= 2022)]
+
+# Interested countries to select
+countries = ['CHINA', 'UNITED STATES OF AMERICA', 'FRANCE', 'UNITED KINGDOM', 'SPAIN', 'INDIA']
+
+# Filter by interested countries
+arrival_selected = arrival_2010_2022[arrival_2010_2022['Country'].isin(countries)]
+expenditure_selected = expenditure_2010_2022[expenditure_2010_2022['Country'].isin(countries)]
+
+countries_high = ['CHINA', 'UNITED STATES OF AMERICA']
+
+# Filter by interested countries
+arrival_selected = arrival_2010_2022[arrival_2010_2022['Country'].isin(countries_high)]
+expenditure_selected = expenditure_2010_2022[expenditure_2010_2022['Country'].isin(countries_high)]
+
+# Rename columns
+arrival_selected = arrival_selected.rename(columns={'Total arrivals (Thousands)': 'Total_arrival'})
+expenditure_selected = expenditure_selected.rename(columns={
+    'Tourism expenditure in the country (US$ Millions)': 'Total_expend',
+    'Passenger transport (US$ Millions)': 'Passenger_expend',
+    'Travel (US$ Millions)': 'Travel_expend'
+})
+
+# Ensure numeric and handle missing values (for both datasets)
+arrival_selected['Total_arrival'] = pd.to_numeric(arrival_selected['Total_arrival'], errors='coerce')
+arrival_selected['Total_arrival'].fillna(0, inplace=True)
+
+expenditure_selected['Total_expend'] = pd.to_numeric(expenditure_selected['Total_expend'], errors='coerce')
+expenditure_selected['Total_expend'].fillna(0, inplace=True)
+
+expenditure_selected['Passenger_expend'] = pd.to_numeric(expenditure_selected['Passenger_expend'], errors='coerce')
+expenditure_selected['Passenger_expend'].fillna(0, inplace=True)
+
+# Merge the two datasets on 'Country' and 'Years'
+merged_data = pd.merge(expenditure_selected, arrival_selected, on=['Country', 'Years'])
+
+# Select needed columns, change type, and drop NA
+merged_data = merged_data[['Country', 'Years', 'Total_expend', 'Total_arrival']]
+merged_data['Years'] = pd.to_numeric(merged_data['Years'], errors='coerce')
+merged_data['Total_expend'] = pd.to_numeric(merged_data['Total_expend'], errors='coerce')
+merged_data['Total_arrival'] = pd.to_numeric(merged_data['Total_arrival'], errors='coerce')
+merged_data.dropna(inplace=True)
+
+# Drop rows where 'Total_arrival' is 0
+merged_data = merged_data[merged_data['Total_arrival'] != 0]
+
+merged_data['Total_arrival'] = merged_data['Total_arrival'] * 1000
+merged_data['Total_expend'] = merged_data['Total_expend'] * 1000000
+
+# Read world bank data for GDP
+All_Countries_Worldbank = pd.read_csv("../data/Processed_data/All_Countries_Worldbank.csv")
+All_Countries_Worldbank = All_Countries_Worldbank[['Country', 'Years', 'GDP (current US$)']]
+# Replace 'UNITED STATES' with 'UNITED STATES OF AMERICA' in the 'Country' column
+All_Countries_Worldbank['Country'] = All_Countries_Worldbank['Country'].replace('UNITED STATES', 'UNITED STATES OF AMERICA')
+
+# Merge the two datasets on 'Country' and 'Years'
+merged_data = pd.merge(merged_data, All_Countries_Worldbank, on=['Country', 'Years'], how='left')
+
+# Create a numerical encoding for the 'Country' column
+merged_data['Country'] = merged_data['Country'].astype('category')
+merged_data['Country_Code'] = merged_data['Country'].cat.codes
+
+# Plotly
+fig = px.parallel_coordinates(merged_data, color="Country_Code",
+                              dimensions=['GDP (current US$)', 'Total_expend', 'Total_arrival', 'Years'],
+                              color_continuous_scale=px.colors.qualitative.Set1,
+                              color_continuous_midpoint=1, range_color = [0, 1.5],
+                              title = "Relations For Inbound Arrivals, Expenditure, and GDP (Higher GDP Tier)", width = 800, height = 600)
+fig.update_layout(
+    margin=dict(t=100, l=50, r=50, b=50),
+    title=dict(y=0.95),
+    coloraxis_colorbar=dict(
+        tickvals=list(range(len(merged_data['Country'].cat.categories))),  # Match ticks with country codes
+        ticktext=merged_data['Country'].cat.categories.tolist(),  # Show country names instead of numeric codes
+        title="Countries"
+    ),
+    showlegend=True  # Ensure the legend is visible
+)
+fig.show()
+```
+
+```{python}
+#| fig-cap: "Figure 9: Parallel Coordinate Plot: Lower Tier"
+#| message: false
+#| warning: false
+
+countries_low = ['FRANCE', 'UNITED KINGDOM', 'SPAIN', 'INDIA']
+
+# Filter by interested countries
+arrival_selected = arrival_2010_2022[arrival_2010_2022['Country'].isin(countries_low)]
+expenditure_selected = expenditure_2010_2022[expenditure_2010_2022['Country'].isin(countries_low)]
+
+# Rename columns
+arrival_selected = arrival_selected.rename(columns={'Total arrivals (Thousands)': 'Total_arrival'})
+expenditure_selected = expenditure_selected.rename(columns={
+    'Tourism expenditure in the country (US$ Millions)': 'Total_expend',
+    'Passenger transport (US$ Millions)': 'Passenger_expend',
+    'Travel (US$ Millions)': 'Travel_expend'
+})
+
+# Ensure numeric and handle missing values (for both datasets)
+arrival_selected['Total_arrival'] = pd.to_numeric(arrival_selected['Total_arrival'], errors='coerce')
+arrival_selected['Total_arrival'].fillna(0, inplace=True)
+
+expenditure_selected['Total_expend'] = pd.to_numeric(expenditure_selected['Total_expend'], errors='coerce')
+expenditure_selected['Total_expend'].fillna(0, inplace=True)
+
+expenditure_selected['Passenger_expend'] = pd.to_numeric(expenditure_selected['Passenger_expend'], errors='coerce')
+expenditure_selected['Passenger_expend'].fillna(0, inplace=True)
+
+# Merge the two datasets on 'Country' and 'Years'
+merged_data = pd.merge(expenditure_selected, arrival_selected, on=['Country', 'Years'])
+
+# Select needed columns, change type, and drop NA
+merged_data = merged_data[['Country', 'Years', 'Total_expend', 'Total_arrival']]
+merged_data['Years'] = pd.to_numeric(merged_data['Years'], errors='coerce')
+merged_data['Total_expend'] = pd.to_numeric(merged_data['Total_expend'], errors='coerce')
+merged_data['Total_arrival'] = pd.to_numeric(merged_data['Total_arrival'], errors='coerce')
+merged_data.dropna(inplace=True)
+
+# Drop rows where 'Total_arrival' is 0
+merged_data = merged_data[merged_data['Total_arrival'] != 0]
+
+merged_data['Total_arrival'] = merged_data['Total_arrival'] * 1000
+merged_data['Total_expend'] = merged_data['Total_expend'] * 1000000
+
+# Read world bank data for GDP
+All_Countries_Worldbank = pd.read_csv("../data/Processed_data/All_Countries_Worldbank.csv")
+All_Countries_Worldbank = All_Countries_Worldbank[['Country', 'Years', 'GDP (current US$)']]
+# Replace 'UNITED STATES' with 'UNITED STATES OF AMERICA' in the 'Country' column
+All_Countries_Worldbank['Country'] = All_Countries_Worldbank['Country'].replace('UNITED STATES', 'UNITED STATES OF AMERICA')
+
+# Merge the two datasets on 'Country' and 'Years'
+merged_data = pd.merge(merged_data, All_Countries_Worldbank, on=['Country', 'Years'], how='left')
+
+# Create a numerical encoding for the 'Country' column
+merged_data['Country'] = merged_data['Country'].astype('category')
+merged_data['Country_Code'] = merged_data['Country'].cat.codes
+
+# Plotly
+fig = px.parallel_coordinates(merged_data, color="Country_Code",
+                              dimensions=['GDP (current US$)', 'Total_expend', 'Total_arrival', 'Years'],
+                              color_continuous_scale=px.colors.qualitative.Set1,
+                              color_continuous_midpoint=1, range_color = [0, 3.5],
+                              title = "Relations For Inbound Arrivals, Expenditure, and GDP (Lower GDP Tier)", width = 800, height = 600)
+fig.update_layout(
+    margin=dict(t=100, l=50, r=50, b=50),
+    title=dict(y=0.95),
+    coloraxis_colorbar=dict(
+        tickvals=list(range(len(merged_data['Country'].cat.categories))),  # Match ticks with country codes
+        ticktext=merged_data['Country'].cat.categories.tolist(),  # Show country names instead of numeric codes
+        title="Countries"
+    ),
+    showlegend=True  # Ensure the legend is visible
+)
+fig.show()
+```
+
+## Tourism and Employment
+Tourism growth has consistently driven job creation across all six markets. China and India’s visitor numbers surged 4–6× since 2000, fueling substantial employment gains even in capital-intensive sectors. France and the U.K., despite more modest arrival increases, generated proportionally greater jobs, showcasing labor-rich tourism models. In the U.S. and Spain, tourism and employment rose hand-in-hand through 2019 and rebounded strongly after the 2020 downturn. Overall, rising arrivals translate directly into more tourism-sector jobs, confirming a clear, positive impact of tourism on employment.
+
+```{python}
+#| fig-cap: "Figure 10: Indexed Growth: Tourism vs. Employment"
+#| message: false
+#| warning: false
+import pandas as pd
+import matplotlib.pyplot as plt
+
+arrival = pd.read_csv('../data/Processed_data/arrival.csv')
+employment = pd.read_csv('../data/Processed_data/employment.csv')
+
+target = [
+    'TAIWAN PROVINCE OF CHINA',
+    'UNITED KINGDOM',
+    'UNITED STATES OF AMERICA',
+    'INDIA',
+    'FRANCE',
+    'SPAIN'
+]
+rename_map = {
+    'TAIWAN PROVINCE OF CHINA': 'China',
+    'UNITED KINGDOM': 'United Kingdom',
+    'UNITED STATES OF AMERICA': 'United States',
+    'INDIA': 'India',
+    'FRANCE': 'France',
+    'SPAIN': 'Spain'
+}
+
+arr = arrival[arrival['Country'].isin(target)].copy()
+emp = employment[employment['Country'].isin(target)].copy()
+arr['Country'] = arr['Country'].replace(rename_map)
+emp['Country'] = emp['Country'].replace(rename_map)
+
+arr_pivot = arr.pivot(index='Years', columns='Country', values='Total arrivals (Thousands)')
+emp_pivot = emp.pivot(index='Years', columns='Country', values='Total (Thousands)')
+
+countries = ['China', 'United Kingdom', 'United States', 'India', 'France', 'Spain']
+arr_index = pd.DataFrame(index=arr_pivot.index)
+emp_index = pd.DataFrame(index=emp_pivot.index)
+base_years = {}
+
+for country in countries:
+    arr_years = set(arr_pivot.index[arr_pivot[country].notna()])
+    emp_years = set(emp_pivot.index[emp_pivot[country].notna()])
+    common_years = sorted(arr_years & emp_years)
+    if not common_years:
+        continue
+    base = common_years[0]
+    base_years[country] = base
+    arr_index[country] = arr_pivot[country] / arr_pivot.loc[base, country] * 100
+    emp_index[country] = emp_pivot[country] / emp_pivot.loc[base, country] * 100
+
+ymin = min(arr_index.min().min(), emp_index.min().min()) * 0.9
+ymax = max(arr_index.max().max(), emp_index.max().max()) * 1.1
+
+fig, axes = plt.subplots(2, 3, figsize=(10, 6), sharex=True, sharey=True)
+axes = axes.flatten()
+
+for ax, country in zip(axes, countries):
+    base = base_years.get(country, None)
+    ax.plot(arr_index.index, arr_index[country], label='Arrivals', color='tab:blue', linewidth=1.5)
+    ax.plot(emp_index.index, emp_index[country], label='Employment', color='tab:red', linestyle='--', linewidth=1.5)
+    ax.set_title(country)
+    ax.set_xlabel('Year')
+    ax.set_ylabel('Index (100 = base)')
+    ax.set_ylim(ymin, ymax)
+    ax.grid(True, linestyle=':', linewidth=0.5)
+    ax.legend(loc='upper left', fontsize='small')
+
+plt.suptitle('Indexed Growth: Tourism vs. Employment', fontsize=16)
+plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+plt.show()
+
+
+```
+
+# Conclusion
+
+Our analysis reveals that tourism success is driven more by cultural appeal, service quality, and accessibility than by pure economic size. Strong tourism sectors rely on creating rich visitor experiences, not just wealth. In return, tourism acts as a major engine for economic growth—boosting employment and strengthening economies. Countries that nurture both domestic and international tourism stand out not just as travel hubs, but also as more adaptable and prosperous economies.
